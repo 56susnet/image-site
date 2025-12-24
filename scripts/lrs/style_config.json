@@ -15,17 +15,17 @@
         "b89415872c1864f2a6ccccb34d6744021aa58eec13ab9109d4fa53931156ead4": {
             "max_grad_norm": 1.314,
             "prior_loss_weight": 0.612,
-            "max_train_epochs": 23,
+            "max_train_epochs": 20,
             "train_batch_size": 6,
             "optimizer_args": [
                 "betas=(0.9, 0.999)",
                 "weight_decay=3e-04",
                 "eps=1e-08"
             ],
-            "unet_lr": 5e-5,
-            "text_encoder_lr": 5e-6,
-            "noise_offset": 0.0411,
-            "min_snr_gamma": 6,
+            "unet_lr": 2e-5,
+            "text_encoder_lr": 2e-6,
+            "noise_offset": 0.0357,
+            "min_snr_gamma": 8,
             "seed": 2951032221
         },
         "f0beb2d95bfe25352803339af6c50e45e43f6a36125f42c69e5b8fe8b6e07462": {
