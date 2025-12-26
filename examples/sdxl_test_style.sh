@@ -1,13 +1,13 @@
 #!/bin/bash
 
-TASK_ID="ec368f6f-0c39-4eed-9ac6-b86fd737007e"
-MODEL="stabilityai/stable-diffusion-xl-base-1.0"
-DATASET_ZIP="https://gradients.s3.eu-north-1.amazonaws.com/6bb9caa18a5cf01f_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVVZOOA7SA4UOFLPI%2F20251204%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251204T075545Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=683150c72592fea7db2e7e6e652a2a463f07bda4e0fa48aecb987d37eb1767f4"
+TASK_ID="a99f887d-dac1-48aa-883c-78d298b800b4"
+MODEL="dataautogpt3/CALAMITY"
+DATASET_ZIP="https://gradients.s3.eu-north-1.amazonaws.com/59ddb9abbf4a4348_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVVZOOA7SA4UOFLPI%2F20251221%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251221T014637Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=c5f120d9ad4c5e04843cc6578f0dc4f8ca6b6abc98fc1c9cb9ce5d2bceb90874"
 MODEL_TYPE="sdxl"
-EXPECTED_REPO_NAME="ec368f6f-0c39-4eed-9ac6-b86fd737007e-repo1"
+EXPECTED_REPO_NAME="test_style-1"
 
-HUGGINGFACE_TOKEN="Your Huggingface Token"
-HUGGINGFACE_USERNAME="Your Huggingface Username"
+HUGGINGFACE_TOKEN=""
+HUGGINGFACE_USERNAME=""
 LOCAL_FOLDER="/app/checkpoints/$TASK_ID/$EXPECTED_REPO_NAME"
 
 CHECKPOINTS_DIR="$(pwd)/secure_checkpoints"

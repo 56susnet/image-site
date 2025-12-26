@@ -1,13 +1,13 @@
 #!/bin/bash
 
-TASK_ID="22ebbb53-d08d-487b-85aa-ba1a8e283763"
-MODEL="GraydientPlatformAPI/realism-engine2-xl"
-DATASET_ZIP="https://gradients.s3.eu-north-1.amazonaws.com/0b33823542ad8d23_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVVZOOA7SA4UOFLPI%2F20251204%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251204T055508Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=e2310be8de5747d83be529a2ef2eb073e3a97bc794fe3c3d9c51947c37c3a46b"
-MODEL_TYPE="sdxl"
-EXPECTED_REPO_NAME="22ebbb53-d08d-487b-85aa-ba1a8e283763-repo1"
+TASK_ID="af32bd1b-ef6e-47a3-a875-32cc932434a3"
+MODEL="mhnakif/fluxunchained-dev"
+DATASET_ZIP="https://gradients.s3.eu-north-1.amazonaws.com/88a183b11c36a018_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVVZOOA7SA4UOFLPI%2F20251221%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251221T220851Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=37becbbd98b4f2fd5cce61e7fa0a200a8747b6b407e2a93414f29f21ca7da2b7"
+MODEL_TYPE="flux"
+EXPECTED_REPO_NAME="test_flux-1"
 
-HUGGINGFACE_TOKEN="Your Huggingface Token"
-HUGGINGFACE_USERNAME="Your Huggingface Username"
+HUGGINGFACE_TOKEN=""
+HUGGINGFACE_USERNAME=""
 LOCAL_FOLDER="/app/checkpoints/$TASK_ID/$EXPECTED_REPO_NAME"
 
 CHECKPOINTS_DIR="$(pwd)/secure_checkpoints"
