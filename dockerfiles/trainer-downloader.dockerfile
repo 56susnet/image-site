@@ -1,29 +1,12 @@
-FROM diagonalge/kohya_latest:latest
+FROM python:3.10-slim
 
-# Install git (required for pip installations from git repositories)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-COPY scripts/sd-script /app/sd-script
+WORKDIR /app
 
-# Install core dependencies from pyproject.toml
-RUN pip install aiohttp pydantic requests toml \
-    "fiber @ git+https://github.com/rayonlabs/fiber.git@2.4.0" \
-    fastapi uvicorn httpx loguru python-dotenv \
-    scipy numpy datasets tenacity minio huggingface_hub \
-    transformers==4.44.0 pandas==2.2.3 tiktoken==0.8.0 sentencepiece==0.2.0 peft==0.11.1 Pillow==11.1.0 PyYAML \
-    requests huggingface_hub
+RUN pip install --no-cache-dir huggingface_hub aiohttp pydantic transformers
 
-RUN mkdir -p /dataset/configs \
-    /dataset/outputs \
-    /dataset/images \
-    /workspace/scripts \
-    /workspace/core
+COPY trainer/ trainer/
+COPY scripts/core/ core/
 
-COPY scripts/core /workspace/core
-# COPY miner /workspace/miner
-COPY trainer /workspace/trainer
-COPY scripts /workspace/scripts
+ENV PYTHONPATH=/app
 
-RUN chmod +x /workspace/scripts/run_image_trainer.sh
-RUN chmod +x /workspace/scripts/image_trainer.py
-
-ENTRYPOINT ["/workspace/scripts/run_image_trainer.sh"]
+ENTRYPOINT ["python", "trainer/utils/trainer_downloader.py"]
