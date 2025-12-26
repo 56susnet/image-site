@@ -304,6 +304,7 @@ class NewTaskRequestImage(NewTaskRequest):
         default_factory=lambda: str(uuid4()), description="A ds name. The actual dataset is provided via the image_text_pairs"
     )
     model_type: ImageModelType = ImageModelType.SDXL
+    trigger_word: str | None = None
 
 
 class NewTaskWithFixedDatasetsRequest(NewTaskRequestInstructText):

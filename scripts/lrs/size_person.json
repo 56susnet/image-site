@@ -1,0 +1,60 @@
+{
+    "default": {},
+    "size_ranges": [
+        {
+            "min": 1,
+            "max": 15,
+            "config": {
+                "train_batch_size": 6,
+                "lr_scheduler": "constant_with_warmup",
+                "lr_warmup_steps": 150,
+                "network_dim": 32,
+                "network_alpha": 16
+            }
+        },
+        {
+            "min": 16,
+            "max": 30,
+            "config": {
+                "train_batch_size": 6,
+                "lr_scheduler": "constant_with_warmup",
+                "lr_warmup_steps": 150,
+                "network_dim": 32,
+                "network_alpha": 16
+            }
+        },
+        {
+            "min": 31,
+            "max": 50,
+            "config": {
+                "train_batch_size": 6,
+                "lr_scheduler": "constant_with_warmup",
+                "lr_warmup_steps": 300,
+                "network_dim": 32,
+                "network_alpha": 16
+            }
+        },
+        {
+            "min": 51,
+            "max": 80,
+            "config": {
+                "train_batch_size": 6,
+                "lr_scheduler": "constant_with_warmup",
+                "lr_warmup_steps": 300,
+                "network_dim": 64,
+                "network_alpha": 32
+            }
+        },
+        {
+            "min": 81,
+            "max": 1000,
+            "config": {
+                "train_batch_size": 6,
+                "lr_scheduler": "constant_with_warmup",
+                "lr_warmup_steps": 300,
+                "network_dim": 64,
+                "network_alpha": 32
+            }
+        }
+    ]
+}
