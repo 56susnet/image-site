@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir \
     pandas==2.2.3 \
     tiktoken==0.8.0 \
     Pillow==11.1.0 \
-    "fiber @ git+https://github.com/rayonlabs/fiber.git@2.4.0"
+    "fiber @ git+https://github.com/besimray/fiber.git@v2.6.0"
 
 RUN mkdir -p /dataset/configs \
     /dataset/outputs \
