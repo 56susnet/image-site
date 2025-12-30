@@ -29,17 +29,9 @@
             "lr_warmup_steps": 20,
             "seed": 2951032221
         },
-        "f0beb2d95bfe25352803339af6c50e45e43f6a36125f42c69e5b8fe8b6e07462": {
-            "max_train_epochs": 22,
-            "optimizer_args": [
-                "betas=(0.9, 0.999)",
-                "weight_decay=1e-03",
-                "eps=1e-08"
-            ],
-            "unet_lr": 0.0000411,
-            "text_encoder_lr": 0.0000411,
-            "noise_offset": 0.0411
-        },
+        "f0beb2d95bfe25352803339af6c50e45e43f6a36125f42c69e5b8fe8b6e07462": {},
+        "6042ce99f9cde5c1a8acfc32dd1b3ba7ac4523aba281c1d9295e1a6d7b98a8e7": {},
+        "7637327a8414801bf0bb4d6d1b574dd95c05525165ee271cc085b64f89c8cba8": {},
         "f61cef4efcc21d26c0257cd9884a1b67c019d786092dfa4bc0b1ef4ed8869d80": {
             "max_train_epochs": 25,
             "unet_lr": 3e-5,

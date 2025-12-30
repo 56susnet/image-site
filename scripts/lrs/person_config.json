@@ -132,9 +132,7 @@
             ],
             "min_snr_gamma": 6
         },
-        "d90d3201d5b2ca617d1b34ddc57d124b19d33b98cf1e653299b9b6c849acb69b": {
-            "max_train_epochs": 25
-        },
+        "d90d3201d5b2ca617d1b34ddc57d124b19d33b98cf1e653299b9b6c849acb69b": {},
         "e7d0cc3356bd946337fb5e22fcff6132c7eb363abded9d32a99e42145a90309f": {
             "prior_loss_weight": 1,
             "max_train_epochs": 30,
@@ -177,17 +175,7 @@
             ],
             "min_snr_gamma": 5
         },
-        "9177dab379e14f76c500ad2246352fd9387f11e2f57e2973bf9ada4d7cd4c962": {
-            "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
-            "optimizer_args": [
-                "decouple=True",
-                "d_coef=1",
-                "weight_decay=0.001",
-                "use_bias_correction=True",
-                "safeguard_warmup=True"
-            ]
-        },
+        "9177dab379e14f76c500ad2246352fd9387f11e2f57e2973bf9ada4d7cd4c962": {},
         "c6efeaf411754e65b3e2395640d5f90ac6150a1d82e4b3caf8df566aa406609c": {
             "max_train_epochs": 30
         },
