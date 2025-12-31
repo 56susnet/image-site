@@ -1,8 +1,11 @@
 #!/bin/bash
 
+# Auto-cleanup old containers to prevent conflicts
+docker rm -f image-trainer-example hf-uploader downloader-image 2>/dev/null || true
+
 TASK_ID="1c93dd95-2e89-48d9-813d-e0f521599cfd"
 MODEL="gradients-io-tournaments/Z-Image-Turbo"
-DATASET_ZIP="https://gradients.s3.eu-north-1.amazonaws.com/dc9853fb35c40bd4_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAVVZOOA7SA4UOFLPI%2F20251221%2Feu-north-1%2Fs3%2Faws4_request&X-Amz-Date=20251221T212609Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=865abddfccce78e1964b0abb468c3fc7a591019820d3a3024f7d4220757da588"
+DATASET_ZIP="https://s3.eu-central-003.backblazeb2.com/gradients-validator/6da713f69539e32b_train_data.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=00362e8d6b742200000000002%2F20251226%2Feu-central-003%2Fs3%2Faws4_request&X-Amz-Date=20251226T182738Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=175387a86ac618003e39ee8d44558fef5bfa5b159839ad7d20bb3f0e6a5f0ac6"
 MODEL_TYPE="z-image"
 EXPECTED_REPO_NAME="test_zimage-1"
 
