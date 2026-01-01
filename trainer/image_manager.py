@@ -1,665 +1,404 @@
+#!/usr/bin/env python3
+"""
+image-site
+"""
+
+import argparse
 import asyncio
+import hashlib
 import json
 import os
+import subprocess
+import sys
 import re
-import uuid
+import time
+import yaml
+import toml
 
-import docker
-from docker.errors import APIError
-from docker.errors import BuildError
-from docker.models.containers import Container
 
+# Add project root to python path to import modules
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+sys.path.append(project_root)
+
+import core.constants as cst
+import trainer.constants as train_cst
 import trainer.utils.training_paths as train_paths
-from core.models.payload_models import TrainerProxyRequest
-from core.models.payload_models import TrainRequestImage
-from core.models.payload_models import TrainRequestText
-from core.models.utility_models import ChatTemplateDatasetType
-from core.models.utility_models import DpoDatasetType
-from core.models.utility_models import FileFormat
-from core.models.utility_models import GrpoDatasetType
+from core.config.config_handler import save_config, save_config_toml
+from core.dataset.prepare_diffusion_dataset import prepare_dataset
 from core.models.utility_models import ImageModelType
-from core.models.utility_models import InstructTextDatasetType
-from core.models.utility_models import TaskType
-from trainer import constants as cst
-from trainer.tasks import complete_task
-from trainer.tasks import log_task
-from trainer.tasks import update_wandb_url
-from trainer.utils.trainer_logging import logger
-from trainer.utils.misc import build_wandb_env
-from trainer.utils.misc import extract_container_error
-from trainer.utils.logging_two import get_all_context_tags
-from trainer.utils.logging_two import get_logger
-from trainer.utils.logging_two import stream_container_logs
-from trainer.utils.logging_two import stream_image_build_logs
 
 
-# logger = get_logger(__name__)
 
+def get_model_path(path: str) -> str:
+    if os.path.isdir(path):
+        files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        if len(files) == 1 and files[0].endswith(".safetensors"):
+            return os.path.join(path, files[0])
+    return path
+def merge_model_config(default_config: dict, model_config: dict) -> dict:
+    """Merge default config with model-specific overrides."""
+    merged = {}
 
-def calculate_container_resources(gpu_ids: list[int]) -> tuple[str, int]:
-    """Calculate memory limit and CPU limit based on GPU count.
+    if isinstance(default_config, dict):
+        merged.update(default_config)
 
-    Returns:
-        tuple: (memory_limit_str, cpu_limit_nanocpus)
-    """
-    num_gpus = len(gpu_ids)
-    memory_limit = f"{num_gpus * cst.MEMORY_PER_GPU_GB}g"
-    cpu_limit_nanocpus = num_gpus * cst.CPUS_PER_GPU * 1_000_000_000
+    if isinstance(model_config, dict):
+        merged.update(model_config)
 
-    logger.info(f"Allocating resources for {num_gpus} GPUs: {memory_limit} memory, {num_gpus * cst.CPUS_PER_GPU} CPUs")
-    return memory_limit, cpu_limit_nanocpus
+    return merged if merged else None
+def get_config_for_model(lrs_config: dict, model_name: str) -> dict:
+    """Get configuration overrides based on model name."""
+    if not isinstance(lrs_config, dict):
+        return None
 
+    data = lrs_config.get("data")
+    default_config = lrs_config.get("default", {})
 
-def build_docker_image(
-    dockerfile_path: str,
-    log_labels: dict[str, str] | None = None,
-    context_path: str = ".",
-    is_image_task: bool = False,
-    tag: str = None,
-    no_cache: bool = True,
-) -> tuple[str, str | None]:
-    client: docker.DockerClient = docker.from_env()
+    if isinstance(data, dict) and model_name in data:
+        return merge_model_config(default_config, data.get(model_name))
 
-    if tag is None:
-        tag = f"standalone-image-trainer:{uuid.uuid4()}" if is_image_task else f"standalone-text-trainer:{uuid.uuid4()}"
+    if default_config:
+        return default_config
 
-    logger.info(f"Building Docker image '{tag}', Dockerfile path: {dockerfile_path}, Context Path: {context_path}...")
+    return None
 
-    try:
-        build_output = client.api.build(
-            path=context_path,
-            dockerfile=dockerfile_path,
-            tag=tag,
-            nocache=no_cache,
-            decode=True,
-        )
-        stream_image_build_logs(build_output, logger=logger, log_context=log_labels)
+def load_lrs_config(model_type: str, is_style: bool) -> dict:
+    """Load the appropriate LRS configuration based on model type and training type"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_dir = os.path.join(script_dir, "lrs")
 
-        logger.info("Docker image built successfully.", extra=log_labels)
-        return tag, None
-    except (BuildError, APIError) as e:
-        logger.error(f"Docker build failed: {str(e)}", extra=log_labels)
-        return None, str(e)
-
-
-def delete_image_and_cleanup(tag: str):
-    client = docker.from_env()
-    try:
-        client.images.remove(image=tag, force=True)
-        logger.info(f"Deleted Docker image with tag: {tag}")
-    except docker.errors.ImageNotFound:
-        logger.error(f"No Docker image found with tag: {tag}")
-    except Exception as e:
-        logger.error(f"Failed to delete image '{tag}': {e}")
-
-    try:
-        client.images.prune(filters={"dangling": True})
-        client.api.prune_builds()
-        logger.info("Cleaned up dangling images and build cache.")
-    except Exception as e:
-        logger.error(f"Cleanup failed: {e}")
-
-
-async def run_trainer_container_image(
-    task_id: str,
-    tag: str,
-    model: str,
-    dataset_zip: str,
-    model_type: str,
-    expected_repo_name: str,
-    hours_to_complete: float,
-    hotkey: str,
-    trigger_word: str | None = None,
-    log_labels: dict[str, str] | None = None,
-    gpu_ids: list[int] = [0],
-) -> Container:
-    client: docker.DockerClient = docker.from_env()
-
-    command: list[str] = [
-        "--task-id",
-        task_id,
-        "--model",
-        model,
-        "--dataset-zip",
-        dataset_zip,
-        "--model-type",
-        model_type,
-        "--expected-repo-name",
-        expected_repo_name,
-        "--hours-to-complete",
-        str(hours_to_complete)
-    ]
-
-    if trigger_word:
-        command += ["--trigger-word", trigger_word]
-
-    container_name = f"image-trainer-{uuid.uuid4().hex}"
-
-    # Calculate resources based on GPU count
-    memory_limit, cpu_limit_nanocpus = calculate_container_resources(gpu_ids)
-
-    # Set shared memory size based on GPU count
-    shm_size = "16g" if len(gpu_ids) >= 4 else "8g"
-
-    max_retries = cst.CONTAINER_START_MAX_RETRIES
-    retry_delay = cst.CONTAINER_START_RETRY_DELAY_SECONDS
-
-    for attempt in range(max_retries):
-        try:
-            container: Container = client.containers.run(
-                image=tag,
-                command=command,
-                volumes={
-                    cst.VOLUME_NAMES[0]: {"bind": cst.OUTPUT_CHECKPOINTS_PATH, "mode": "rw"},
-                    cst.VOLUME_NAMES[1]: {"bind": cst.CACHE_ROOT_PATH, "mode": "ro"},
-                },
-                remove=False,
-                shm_size=shm_size,
-                name=container_name,
-                labels=log_labels,
-                mem_limit=memory_limit,
-                nano_cpus=cpu_limit_nanocpus,
-                device_requests=[docker.types.DeviceRequest(device_ids=[str(i) for i in gpu_ids], capabilities=[["gpu"]])],
-                security_opt=["no-new-privileges"],
-                cap_drop=["ALL"],
-                network_mode="bridge",  # Changed from "none" to allow log shipping
-                environment={"TRANSFORMERS_CACHE": cst.HUGGINGFACE_CACHE_PATH},
-                detach=True,
-            )
-
-            log_streaming_task = asyncio.create_task(asyncio.to_thread(stream_container_logs, container, get_all_context_tags()))
-            return container
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Error starting container (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s: {str(e)[:150]}",
-                    extra=log_labels,
-                )
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error(f"Failed to start image trainer container after {max_retries} attempts: {e}", extra=log_labels)
-                raise
-
-
-async def run_trainer_container_text(
-    task_id: str,
-    hotkey: str,
-    tag: str,
-    model: str,
-    dataset: str,
-    dataset_type: InstructTextDatasetType | DpoDatasetType | GrpoDatasetType | ChatTemplateDatasetType,
-    task_type: TaskType,
-    file_format: FileFormat,
-    expected_repo_name: str,
-    hours_to_complete: float,
-    log_labels: dict[str, str] | None = None,
-    gpu_ids: list[int] = [0],
-) -> Container:
-    client: docker.DockerClient = docker.from_env()
-
-    environment = build_wandb_env(task_id, hotkey)
-
-    command: list[str] = [
-        "--task-id",
-        task_id,
-        "--model",
-        model,
-        "--dataset",
-        dataset,
-        "--dataset-type",
-        json.dumps(dataset_type.model_dump()),
-        "--task-type",
-        task_type,
-        "--file-format",
-        file_format,
-        "--expected-repo-name",
-        expected_repo_name,
-        "--hours-to-complete",
-        str(hours_to_complete),
-    ]
-
-    container_name = f"text-trainer-{uuid.uuid4().hex}"
-
-    # Calculate resources based on GPU count
-    memory_limit, cpu_limit_nanocpus = calculate_container_resources(gpu_ids)
-
-    # Set shared memory size based on GPU count
-    shm_size = "16g" if len(gpu_ids) >= 4 else "8g"
-
-    max_retries = cst.CONTAINER_START_MAX_RETRIES
-    retry_delay = cst.CONTAINER_START_RETRY_DELAY_SECONDS
-
-    for attempt in range(max_retries):
-        try:
-            container: Container = client.containers.run(
-                image=tag,
-                command=command,
-                volumes={
-                    cst.VOLUME_NAMES[0]: {"bind": cst.OUTPUT_CHECKPOINTS_PATH, "mode": "rw"},
-                    cst.VOLUME_NAMES[1]: {"bind": cst.CACHE_ROOT_PATH, "mode": "ro"},
-                },
-                remove=False,
-                shm_size=shm_size,
-                name=container_name,
-                labels=log_labels,
-                mem_limit=memory_limit,
-                nano_cpus=cpu_limit_nanocpus,
-                device_requests=[docker.types.DeviceRequest(device_ids=[str(i) for i in gpu_ids], capabilities=[["gpu"]])],
-                security_opt=["no-new-privileges"],
-                cap_drop=["ALL"],
-                detach=True,
-                network_mode="bridge",  # Changed from "none" to allow log shipping
-                environment=environment,
-            )
-
-            log_streaming_task = asyncio.create_task(asyncio.to_thread(stream_container_logs, container, get_all_context_tags()))
-            return container
-
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(
-                    f"Error starting container (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s: {str(e)[:150]}",
-                    extra=log_labels,
-                )
-                await asyncio.sleep(retry_delay)
-            else:
-                logger.error(f"Failed to start text trainer container after {max_retries} attempts: {e}", extra=log_labels)
-                raise
-
-
-async def create_volumes_if_dont_exist():
-    client: docker.DockerClient = docker.from_env()
-    volume_names = cst.VOLUME_NAMES
-    for volume_name in volume_names:
-        try:
-            volume = client.volumes.get(volume_name)
-        except docker.errors.NotFound:
-            volume = client.volumes.create(name=volume_name)
-            logger.info(f"Volume '{volume_name}' created.")
-
-
-def run_downloader_container(
-    task_id: str,
-    model: str,
-    dataset_url: str,
-    task_type: TaskType,
-    hotkey: str,
-    file_format: FileFormat | None = None,
-    model_type: ImageModelType | None = None,
-    log_labels: dict[str, str] | None = None,
-) -> tuple[int, Exception | None]:
-    client = docker.from_env()
-
-    command = [
-        "--task-id",
-        task_id,
-        "--model",
-        model,
-        "--task-type",
-        task_type,
-        "--dataset",
-        dataset_url,
-    ]
-    if file_format:
-        command += ["--file-format", file_format]
-
-    if model_type:
-        command += ["--model-type", model_type]
-
-    container_name = f"downloader-{task_id}-{str(uuid.uuid4())[:8]}"
-    container = None
-
-    try:
-        logger.info(f"Starting downloader container: {container_name}", extra=log_labels)
-        container = client.containers.run(
-            image=cst.TRAINER_DOWNLOADER_DOCKER_IMAGE,
-            name=container_name,
-            command=command,
-            labels=log_labels,
-            volumes={cst.VOLUME_NAMES[1]: {"bind": "/cache", "mode": "rw"}},
-            remove=False,
-            detach=True,
-        )
-
-        stream_container_logs(container, get_all_context_tags())
-
-        result = container.wait()
-        exit_code = result.get("StatusCode", -1)
-
-        if exit_code == 0:
-            logger.info(f"Download completed successfully for task {task_id}", extra=log_labels)
-        else:
-            logs = container.logs().decode("utf-8", errors="ignore")
-            error_message = extract_container_error(logs)
-            return exit_code, error_message
-
-        return exit_code, None
-
-    except docker.errors.ContainerError as e:
-        logger.error(f"Downloader container failed for task {task_id}: {e}", extra=log_labels)
-        return 1, e
-
-    except Exception as ex:
-        logger.error(f"Unexpected error in downloader for task {task_id}: {ex}", extra=log_labels)
-        return 1, ex
-
-    finally:
-        if container:
-            try:
-                container.remove(force=True)
-            except Exception as cleanup_err:
-                logger.warning(f"Failed to remove container {container_name}: {cleanup_err}", extra=log_labels)
-
-
-async def upload_repo_to_hf(
-    task_id: str,
-    hotkey: str,
-    expected_repo_name: str,
-    huggingface_token: str,
-    huggingface_username: str,
-    model: str,
-    docker_labels: dict[str, str] | None = None,
-    wandb_token: str | None = None,
-    path_in_repo: str | None = None,
-):
-    container = None
-    try:
-        client = docker.from_env()
-        local_container_folder = train_paths.get_checkpoints_output_path(task_id, expected_repo_name)
-
-        environment = {
-            "HUGGINGFACE_TOKEN": huggingface_token,
-            "HUGGINGFACE_USERNAME": huggingface_username,
-            "WANDB_TOKEN": wandb_token or None,
-            "WANDB_LOGS_PATH": f"{cst.WANDB_LOGS_DIR}/{task_id}_{hotkey}",
-            "LOCAL_FOLDER": local_container_folder,
-            "MODEL": model,
-            "TASK_ID": task_id,
-            "EXPECTED_REPO_NAME": expected_repo_name,
-            "HF_REPO_SUBFOLDER": path_in_repo,
-        }
-
-        volumes = {
-            cst.VOLUME_NAMES[0]: {"bind": cst.OUTPUT_CHECKPOINTS_PATH, "mode": "rw"},
-            cst.VOLUME_NAMES[1]: {"bind": cst.CACHE_ROOT_PATH, "mode": "rw"},
-        }
-
-        container_name = f"hf-upload-{uuid.uuid4().hex}"
-
-        logger.info(f"Starting upload container {container_name} for task {task_id}...", extra=docker_labels)
-
-        container = client.containers.run(
-            image=cst.HF_UPLOAD_DOCKER_IMAGE,
-            environment=environment,
-            volumes=volumes,
-            labels=docker_labels,
-            detach=True,
-            remove=False,
-            name=container_name,
-        )
-
-        log_streaming_task = asyncio.create_task(asyncio.to_thread(stream_container_logs, container, get_all_context_tags()))
-
-        result = container.wait()
-        logs = container.logs().decode("utf-8", errors="ignore")
-        exit_code = result.get("StatusCode", -1)
-        wandb_url = None
-        if wandb_token:
-            m = re.search(r"https://wandb\.ai/\S+", logs)
-            wandb_url = m.group(0) if m else None
-            if wandb_url:
-                await update_wandb_url(task_id, hotkey, wandb_url)
-
-        if exit_code != 0:
-            last_err = extract_container_error(logs) or "unknown error"
-            msg = f"HF upload failed | exit_code={exit_code} | container={container_name} | last_error={last_err}"
-            await log_task(task_id, hotkey, f"[ERROR] {msg}")
-            raise RuntimeError(msg)
-
-    except Exception as e:
-        logger.exception(f"Unexpected error during upload_repo_to_hf for task {task_id}: {e}", extra=docker_labels)
-        raise
-
-    finally:
-        if container and isinstance(container, Container):
-            try:
-                container.reload()
-                if container.status == "running":
-                    container.kill()
-                container.remove(force=True)
-            except Exception as cleanup_err:
-                logger.warning(f"Failed to remove upload container {container.name}: {cleanup_err}")
-
-
-def get_task_type(request: TrainerProxyRequest) -> TaskType:
-    training_data = request.training_data
-
-    if isinstance(training_data, TrainRequestImage):
-        return TaskType.IMAGETASK
-
-    elif isinstance(training_data, TrainRequestText):
-        if isinstance(training_data.dataset_type, DpoDatasetType):
-            return TaskType.DPOTASK
-        elif isinstance(training_data.dataset_type, InstructTextDatasetType):
-            return TaskType.INSTRUCTTEXTTASK
-        elif isinstance(training_data.dataset_type, ChatTemplateDatasetType):
-            return TaskType.CHATTASK
-        elif isinstance(training_data.dataset_type, GrpoDatasetType):
-            return TaskType.GRPOTASK
-        else:
-            raise ValueError(f"Unsupported dataset_type for text task: {type(training_data.dataset_type)}")
-
-    raise ValueError(f"Unsupported training_data type: {type(training_data)}")
-
-
-def get_dockerfile_path(task_type: TaskType, training_data, local_repo_path: str) -> str:
-    """Get the appropriate dockerfile path based on task type and model type"""
-    if task_type == TaskType.IMAGETASK:
-        model_type = training_data.model_type
-        if model_type in [ImageModelType.Z_IMAGE, ImageModelType.QWEN_IMAGE]:
-            return f"{local_repo_path}/{cst.DEFAULT_IMAGE_TOOLKIT_DOCKERFILE_PATH}"
-        else:
-            return f"{local_repo_path}/{cst.DEFAULT_IMAGE_DOCKERFILE_PATH}"
- 
+    if model_type == "flux":
+        config_file = os.path.join(config_dir, "flux.json")
+    elif is_style:
+        config_file = os.path.join(config_dir, "style_config.json")
     else:
-        return f"{local_repo_path}/{cst.DEFAULT_TEXT_DOCKERFILE_PATH}"
-
-
-async def start_training_task(task: TrainerProxyRequest, local_repo_path: str):
-    cancelled_exc: asyncio.CancelledError | None = None
-    cancel_log_message: str | None = None
-
+        config_file = os.path.join(config_dir, "person_config.json")
+    
     try:
-        training_data = task.training_data
-        success = False
-        container = None
-        tag = None
-        timeout_seconds = int(training_data.hours_to_complete * 3600)
-        task_type = get_task_type(task)
-        training_data.hours_to_complete = int(training_data.hours_to_complete)
-        await create_volumes_if_dont_exist()
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load LRS config from {config_file}: {e}", flush=True)
+        return None
 
-        log_labels = {
-            "task_id": training_data.task_id,
-            "hotkey": task.hotkey,
-            "model": training_data.model,
-            "task_type": task_type,
-            "expected_repo": training_data.expected_repo_name,
-            **(
-                {"dataset_type": str(training_data.dataset_type)}
-                if getattr(training_data, "dataset_type", None) is not None
-                else {}
-            ),
+
+def create_config(task_id, model_path, model_name, model_type, expected_repo_name, trigger_word: str | None = None):
+    """Get the training data directory"""
+    train_data_dir = train_paths.get_image_training_images_dir(task_id)
+
+    """Create the diffusion config file"""
+    config_template_path, is_style = train_paths.get_image_training_config_template_path(model_type, train_data_dir)
+
+    is_ai_toolkit = model_type in [ImageModelType.Z_IMAGE.value, ImageModelType.QWEN_IMAGE.value]
+    
+    if is_ai_toolkit:
+        with open(config_template_path, "r") as file:
+            config = yaml.safe_load(file)
+        if 'config' in config and 'process' in config['config']:
+            for process in config['config']['process']:
+                if 'model' in process:
+                    process['model']['name_or_path'] = model_path
+                    if 'training_folder' in process:
+                        output_dir = train_paths.get_checkpoints_output_path(task_id, expected_repo_name or "output")
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir, exist_ok=True)
+                        process['training_folder'] = output_dir
+                
+                if 'datasets' in process:
+                    for dataset in process['datasets']:
+                        dataset['folder_path'] = train_data_dir
+
+                if trigger_word:
+                    process['trigger_word'] = trigger_word
+        
+        config_path = os.path.join(train_cst.IMAGE_CONTAINER_CONFIG_SAVE_PATH, f"{task_id}.yaml")
+        save_config(config, config_path)
+        print(f"Created ai-toolkit config at {config_path}", flush=True)
+        return config_path
+    else:
+        with open(config_template_path, "r") as file:
+            config = toml.load(file)
+
+        lrs_config = load_lrs_config(model_type, is_style)
+        if lrs_config:
+            model_hash = hash_model(model_name)
+            lrs_settings = get_config_for_model(lrs_config, model_hash)
+
+            if lrs_settings:
+                for optional_key in [
+                    "max_grad_norm",
+                    "prior_loss_weight",
+                    "max_train_epochs",
+                    "train_batch_size",
+                    "optimizer_args",
+                    "unet_lr",
+                    "text_encoder_lr",
+                    "noise_offset",
+                    "min_snr_gamma",
+                    "seed",
+                    "lr_warmup_steps",
+                    "loss_type",
+                    "huber_c",
+                    "huber_schedule",
+                ]:
+                    if optional_key in lrs_settings:
+                        config[optional_key] = lrs_settings[optional_key]
+            else:
+                print(f"Warning: No LRS configuration found for model '{model_name}'", flush=True)
+        else:
+            print("Warning: Could not load LRS configuration, using default values", flush=True)
+
+        # Update config
+        network_config_person = {
+            "stabilityai/stable-diffusion-xl-base-1.0": 235,
+            "Lykon/dreamshaper-xl-1-0": 235,
+            "Lykon/art-diffusion-xl-0.9": 235,
+            "SG161222/RealVisXL_V4.0": 467,
+            "stablediffusionapi/protovision-xl-v6.6": 235,
+            "stablediffusionapi/omnium-sdxl": 235,
+            "GraydientPlatformAPI/realism-engine2-xl": 235,
+            "GraydientPlatformAPI/albedobase2-xl": 467,
+            "KBlueLeaf/Kohaku-XL-Zeta": 235,
+            "John6666/hassaku-xl-illustrious-v10style-sdxl": 228,
+            "John6666/nova-anime-xl-pony-v5-sdxl": 235,
+            "cagliostrolab/animagine-xl-4.0": 699,
+            "dataautogpt3/CALAMITY": 235,
+            "dataautogpt3/ProteusSigma": 235,
+            "dataautogpt3/ProteusV0.5": 467,
+            "dataautogpt3/TempestV0.1": 456,
+            "ehristoforu/Visionix-alpha": 235,
+            "femboysLover/RealisticStockPhoto-fp16": 467,
+            "fluently/Fluently-XL-Final": 228,
+            "mann-e/Mann-E_Dreams": 456,
+            "misri/leosamsHelloworldXL_helloworldXL70": 235,
+            "misri/zavychromaxl_v90": 235,
+            "openart-custom/DynaVisionXL": 228,
+            "recoilme/colorfulxl": 228,
+            "zenless-lab/sdxl-aam-xl-anime-mix": 456,
+            "zenless-lab/sdxl-anima-pencil-xl-v5": 228,
+            "zenless-lab/sdxl-anything-xl": 228,
+            "zenless-lab/sdxl-blue-pencil-xl-v7": 467,
+            "Corcelio/mobius": 228,
+            "GHArt/Lah_Mysterious_SDXL_V4.0_xl_fp16": 235,
+            "OnomaAIResearch/Illustrious-xl-early-release-v0": 228
         }
 
-        dockerfile_path = get_dockerfile_path(task_type, training_data, local_repo_path)
+        network_config_style = {
+            "stabilityai/stable-diffusion-xl-base-1.0": 235,
+            "Lykon/dreamshaper-xl-1-0": 235,
+            "Lykon/art-diffusion-xl-0.9": 235,
+            "SG161222/RealVisXL_V4.0": 235,
+            "stablediffusionapi/protovision-xl-v6.6": 235,
+            "stablediffusionapi/omnium-sdxl": 235,
+            "GraydientPlatformAPI/realism-engine2-xl": 235,
+            "GraydientPlatformAPI/albedobase2-xl": 235,
+            "KBlueLeaf/Kohaku-XL-Zeta": 235,
+            "John6666/hassaku-xl-illustrious-v10style-sdxl": 235,
+            "John6666/nova-anime-xl-pony-v5-sdxl": 235,
+            "cagliostrolab/animagine-xl-4.0": 235,
+            "dataautogpt3/CALAMITY": 235,
+            "dataautogpt3/ProteusSigma": 235,
+            "dataautogpt3/ProteusV0.5": 235,
+            "dataautogpt3/TempestV0.1": 228,
+            "ehristoforu/Visionix-alpha": 235,
+            "femboysLover/RealisticStockPhoto-fp16": 235,
+            "fluently/Fluently-XL-Final": 235,
+            "mann-e/Mann-E_Dreams": 235,
+            "misri/leosamsHelloworldXL_helloworldXL70": 235,
+            "misri/zavychromaxl_v90": 235,
+            "openart-custom/DynaVisionXL": 235,
+            "recoilme/colorfulxl": 235,
+            "zenless-lab/sdxl-aam-xl-anime-mix": 235,
+            "zenless-lab/sdxl-anima-pencil-xl-v5": 235,
+            "zenless-lab/sdxl-anything-xl": 235,
+            "zenless-lab/sdxl-blue-pencil-xl-v7": 235,
+            "Corcelio/mobius": 235,
+            "GHArt/Lah_Mysterious_SDXL_V4.0_xl_fp16": 235,
+            "OnomaAIResearch/Illustrious-xl-early-release-v0": 235
+        }
 
-        logger.info("Running Cache Download Container", extra=log_labels)
-        await log_task(training_data.task_id, task.hotkey, "Downloading data")
+        config_mapping = {
+            228: {
+                "network_dim": 64,
+                "network_alpha": 32,
+                "network_args": ["conv_dim=8", "conv_alpha=4", "dropout=0.1"]
+            },
+            235: {
+                "network_dim": 128,
+                "network_alpha": 64,
+                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
+            },
+            456: {
+                "network_dim": 128,
+                "network_alpha": 64,
+                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
+            },
+            467: {
+                "network_dim": 128,
+                "network_alpha": 64,
+                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
+            },
+            699: {
+                "network_dim": 192,
+                "network_alpha": 96,
+                "network_args": ["conv_dim=32", "conv_alpha=16", "dropout=0.1"]
+            },
+        }
 
-        download_status, exc = await asyncio.to_thread(
-            run_downloader_container,
-            task_id=training_data.task_id,
-            model=training_data.model,
-            dataset_url=training_data.dataset_zip if task_type == TaskType.IMAGETASK else training_data.dataset,
-            task_type=task_type,
-            hotkey=task.hotkey,
-            file_format=getattr(training_data, "file_format", None),
-            model_type=training_data.model_type if task_type == TaskType.IMAGETASK else None,
-            log_labels=log_labels,
+        config["pretrained_model_name_or_path"] = model_path
+        config["train_data_dir"] = train_data_dir
+        output_dir = train_paths.get_checkpoints_output_path(task_id, expected_repo_name)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        config["output_dir"] = output_dir
+
+        if model_type == "sdxl":
+            if is_style:
+                network_config = config_mapping[network_config_style[model_name]]
+            else:
+                network_config = config_mapping[network_config_person[model_name]]
+
+            # Count images to adjust dropout dynamically
+            num_images = 0
+            if os.path.exists(train_data_dir):
+                for root, dirs, files in os.walk(train_data_dir):
+                    num_images += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
+            
+            print(f"Detected {num_images} images for task {task_id}", flush=True)
+            
+            # If it's a person task (not is_style), always set dropout to 0.005
+            # Otherwise, if style dataset is small (<= 12 images), set dropout to 0.01
+            # Otherwise use the value defined in config_mapping above
+            network_args = []
+            for arg in network_config["network_args"]:
+                if arg.startswith("dropout="):
+                    if not is_style:
+                        network_args.append("dropout=0.005")
+                    elif num_images <= 12:
+                        network_args.append("dropout=0.01")
+                    else:
+                        network_args.append(arg)
+                else:
+                    network_args.append(arg)
+
+            config["network_dim"] = network_config["network_dim"]
+            config["network_alpha"] = network_config["network_alpha"]
+            config["network_args"] = network_args
+
+        config_path = os.path.join(train_cst.IMAGE_CONTAINER_CONFIG_SAVE_PATH, f"{task_id}.toml")
+        save_config_toml(config, config_path)
+        print(f"config is {config}", flush=True)
+        print(f"Created config at {config_path}", flush=True)
+        return config_path
+
+
+def run_training(model_type, config_path):
+    print(f"Starting training with config: {config_path}", flush=True)
+
+    is_ai_toolkit = model_type in [ImageModelType.Z_IMAGE.value, ImageModelType.QWEN_IMAGE.value]
+    
+    if is_ai_toolkit:
+        training_command = [
+            "python3",
+            "/app/ai-toolkit/run.py",
+            config_path
+        ]
+    else:
+        if model_type == "sdxl":
+            training_command = [
+                "accelerate", "launch",
+                "--dynamo_backend", "no",
+                "--dynamo_mode", "default",
+            "--mixed_precision", "bf16",
+            "--num_processes", "1",
+            "--num_machines", "1",
+            "--num_cpu_threads_per_process", "2",
+            f"/app/sd-script/{model_type}_train_network.py",
+            "--config_file", config_path
+        ]
+        elif model_type == "flux":
+            training_command = [
+                "accelerate", "launch",
+                "--dynamo_backend", "no",
+                "--dynamo_mode", "default",
+                "--mixed_precision", "bf16",
+                "--num_processes", "1",
+                "--num_machines", "1",
+                "--num_cpu_threads_per_process", "2",
+                f"/app/sd-scripts/{model_type}_train_network.py",
+                "--config_file", config_path
+            ]
+
+    try:
+        print("Starting training subprocess...\n", flush=True)
+        process = subprocess.Popen(
+            training_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
         )
 
-        if download_status == 0:
-            message = "Download container completed successfully"
-            await log_task(training_data.task_id, task.hotkey, message)
-        else:
-            message = f"[ERROR] Download container failed | ExitCode: {download_status} | LastError: {exc}"
-            await log_task(training_data.task_id, task.hotkey, message)
-            await complete_task(training_data.task_id, task.hotkey, success=False)
-            raise RuntimeError(f"Downloader container failed: {exc}")
+        for line in process.stdout:
+            print(line, end="", flush=True)
 
-        tag, exc = await asyncio.to_thread(
-            build_docker_image,
-            dockerfile_path=dockerfile_path,
-            log_labels=log_labels,
-            is_image_task=(task_type == TaskType.IMAGETASK),
-            context_path=local_repo_path,
-        )
+        return_code = process.wait()
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, training_command)
 
-        if not tag:
-            message = f"[ERROR] Image Build failed | ExitCode: Unknown | LastError: {exc}"
-            logger.error(f"Image build failed: {exc}", extra=log_labels)
-            await log_task(training_data.task_id, task.hotkey, message)
-            await complete_task(training_data.task_id, task.hotkey, success=False)
-            raise RuntimeError(f"Image build failed: {exc}")
+        print("Training subprocess completed successfully.", flush=True)
 
-        await log_task(training_data.task_id, task.hotkey, f"Docker image built with tag: {tag}")
+    except subprocess.CalledProcessError as e:
+        print("Training subprocess failed!", flush=True)
+        print(f"Exit Code: {e.returncode}", flush=True)
+        print(f"Command: {' '.join(e.cmd) if isinstance(e.cmd, list) else e.cmd}", flush=True)
+        raise RuntimeError(f"Training subprocess failed with exit code {e.returncode}")
 
-        if task_type == TaskType.IMAGETASK:
-            container = await asyncio.wait_for(
-                run_trainer_container_image(
-                    task_id=training_data.task_id,
-                    tag=tag,
-                    model=training_data.model,
-                    dataset_zip=training_data.dataset_zip,
-                    model_type=training_data.model_type,
-                    expected_repo_name=training_data.expected_repo_name,
-                    hours_to_complete=training_data.hours_to_complete,
-                    hotkey=task.hotkey,
-                    trigger_word=training_data.trigger_word if training_data.trigger_word else None,
-                    log_labels=log_labels,
-                    gpu_ids=task.gpu_ids,
-                ),
-                timeout=60,
-            )
-        else:
-            container = await asyncio.wait_for(
-                run_trainer_container_text(
-                    task_id=training_data.task_id,
-                    hotkey=task.hotkey,
-                    tag=tag,
-                    model=training_data.model,
-                    dataset=training_data.dataset,
-                    dataset_type=training_data.dataset_type,
-                    task_type=task_type,
-                    file_format=training_data.file_format,
-                    expected_repo_name=training_data.expected_repo_name,
-                    hours_to_complete=training_data.hours_to_complete,
-                    log_labels=log_labels,
-                    gpu_ids=task.gpu_ids,
-                ),
-                timeout=60,
-            )
+def hash_model(model: str) -> str:
+    model_bytes = model.encode('utf-8')
+    hashed = hashlib.sha256(model_bytes).hexdigest()
+    return hashed 
 
-        await log_task(training_data.task_id, task.hotkey, f"Container started: {container.name}")
-        await log_task(training_data.task_id, task.hotkey, f"Waiting for container to finish (timeout={timeout_seconds})...")
-        wait_task = asyncio.create_task(asyncio.to_thread(container.wait))
-        done, pending = await asyncio.wait({wait_task}, timeout=timeout_seconds)
-        await log_task(training_data.task_id, task.hotkey, "Container wait completed or timed out.")
+async def main():
+    print("---STARTING IMAGE TRAINING SCRIPT---", flush=True)
+    parser = argparse.ArgumentParser(description="Image Model Training Script")
+    parser.add_argument("--task-id", required=True, help="Task ID")
+    parser.add_argument("--model", required=True, help="Model name or path")
+    parser.add_argument("--dataset-zip", required=True, help="Link to dataset zip file")
+    parser.add_argument("--model-type", required=True, choices=["sdxl", "flux", "qwen-image", "z-image"], help="Model type")
+    parser.add_argument("--expected-repo-name", help="Expected repository name")
+    parser.add_argument("--trigger-word", help="Trigger word for the training")
+    parser.add_argument("--hours-to-complete", type=float, required=True, help="Number of hours to complete the task")
+    args = parser.parse_args()
 
-        if wait_task in done:
-            result = await wait_task
-            logger.info(f"Container.wait() returned: {result}", extra=log_labels)
-            status_code = result.get("StatusCode", -1)
-            if status_code == 0:
-                await log_task(training_data.task_id, task.hotkey, "Training completed successfully.")
-                success = True
-            else:
-                logs = container.logs().decode("utf-8", errors="ignore")
-                error_message = extract_container_error(logs)
-                if error_message:
-                    log_message = f"[ERROR] Training container failed | ExitCode: {status_code} | LastError: {error_message}"
-                    await log_task(training_data.task_id, task.hotkey, log_message)
-                    logger.error(f"Training container failed: {error_message}", extra=log_labels)
-                await complete_task(training_data.task_id, task.hotkey, success=success)
-                await log_task(training_data.task_id, task.hotkey, f"Training failed with status code {status_code}")
-        else:
-            await log_task(training_data.task_id, task.hotkey, f"Timeout reached ({timeout_seconds}s). Killing container...")
-            success = True
-            await complete_task(training_data.task_id, task.hotkey, success=success)
+    os.makedirs(train_cst.IMAGE_CONTAINER_CONFIG_SAVE_PATH, exist_ok=True)
+    os.makedirs(train_cst.IMAGE_CONTAINER_IMAGES_PATH, exist_ok=True)
 
-    except asyncio.CancelledError as cancel:
-        cancel_log_message = "[INFO] Training cancelled."
-        logger.info("Training cancelled", extra=log_labels)
-        cancelled_exc = cancel
-    except Exception as e:
-        log_message = f"[ERROR] Job failed: {e}"
-        await log_task(training_data.task_id, task.hotkey, log_message)
-        logger.exception(f"Training job failed: {training_data.task_id}", extra=log_labels)
-        await complete_task(training_data.task_id, task.hotkey, success=success)
+    model_path = train_paths.get_image_base_model_path(args.model)
 
-    finally:
-        async def _final_cleanup():
-            nonlocal success
+    print("Preparing dataset...", flush=True)
 
-            if cancel_log_message:
-                await log_task(training_data.task_id, task.hotkey, cancel_log_message)
+    prepare_dataset(
+        training_images_zip_path=train_paths.get_image_training_zip_save_path(args.task_id),
+        training_images_repeat=cst.DIFFUSION_SDXL_REPEATS if args.model_type == ImageModelType.SDXL.value else cst.DIFFUSION_FLUX_REPEATS,
+        instance_prompt=cst.DIFFUSION_DEFAULT_INSTANCE_PROMPT,
+        class_prompt=cst.DIFFUSION_DEFAULT_CLASS_PROMPT,
+        job_id=args.task_id,
+        output_dir=train_cst.IMAGE_CONTAINER_IMAGES_PATH
+    )
 
-            if container and isinstance(container, Container):
-                try:
-                    container.reload()
-                    if container.status == "running":
-                        container.kill()
-                    container.remove(force=True)
-                    await log_task(training_data.task_id, task.hotkey, f"Container {container.name} cleaned up.")
+    config_path = create_config(
+        args.task_id,
+        model_path,
+        args.model,
+        args.model_type,
+        args.expected_repo_name,
+        args.trigger_word,
+    )
 
-                except Exception as cleanup_err:
-                    await log_task(training_data.task_id, task.hotkey, f"Error during container cleanup: {cleanup_err}")
+    run_training(args.model_type, config_path)
 
-            logger.info("Cleaning up", extra=log_labels)
-            if tag:
-                delete_image_and_cleanup(tag)
-                logger.info("Cleaned up Docker resources.", extra=log_labels)
-            else:
-                logger.info("No Docker image to clean up.", extra=log_labels)
 
-            if success:
-                try:
-                    path_in_repo = cst.IMAGE_TASKS_HF_SUBFOLDER_PATH if task_type == TaskType.IMAGETASK else None
-                    wandb_token = os.getenv("WANDB_TOKEN") if task_type != TaskType.IMAGETASK else None
-                    await upload_repo_to_hf(
-                        task_id=training_data.task_id,
-                        hotkey=task.hotkey,
-                        expected_repo_name=training_data.expected_repo_name,
-                        huggingface_username=os.getenv("HUGGINGFACE_USERNAME"),
-                        huggingface_token=os.getenv("HUGGINGFACE_TOKEN"),
-                        model=training_data.model,
-                        docker_labels=log_labels,
-                        wandb_token=wandb_token,
-                        path_in_repo=path_in_repo,
-                    )
-
-                    await log_task(training_data.task_id, task.hotkey, "Repo uploaded successfully.")
-                except Exception as upload_err:
-                    log_message = f"[ERROR] Upload container failed | ExitCode: Unknown | LastError: {upload_err}"
-                    await log_task(training_data.task_id, task.hotkey, log_message)
-                    success = False
-
-            await complete_task(training_data.task_id, task.hotkey, success=success)
-
-        try:
-            await asyncio.shield(_final_cleanup())
-        finally:
-            if cancelled_exc:
-                raise cancelled_exc
+if __name__ == "__main__":
+    asyncio.run(main())
