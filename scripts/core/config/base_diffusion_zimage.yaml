@@ -24,18 +24,18 @@ config:
       is_reg: false
     train:
       batch_size: 1
-      steps: 2500
+      steps: 200
       lr: 0.0001
       optimizer: adamw8bit
       gradient_checkpointing: true
       noise_scheduler: flowmatch
       timestep_type: weighted
       dtype: bf16
+      optimizer_params:
+        weight_decay: 1e-5
       ema_config:
         use_ema: true
         ema_decay: 0.995
-      do_cfg: true
-      cfg_scale: 6.0
     model:
       name_or_path: /cache/models
       arch: zimage:turbo
