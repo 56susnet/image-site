@@ -211,15 +211,16 @@
             "max_train_epochs": 30
         },
         "46bc6498a086646889d92058d7e50398177841349bfce3181bdb5846849354b7": {
-            "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
+            "prior_loss_weight": 0.8,
+            "max_train_epochs": 21,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
                 "weight_decay=0.001",
                 "use_bias_correction=True",
                 "safeguard_warmup=True"
-            ]
+            ],
+            "min_snr_gamma": 7
         },
         "27f4574bdd5f1435fb5cc682631d7941776c0cbe0423101b354ef9def60548e5": {
             "prior_loss_weight": 0.7,
