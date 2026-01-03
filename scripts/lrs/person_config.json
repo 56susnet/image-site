@@ -119,6 +119,18 @@
             ],
             "min_snr_gamma": 7
         },
+        "e4308bdead0e824ea25e37c6caf771f231428975d33316496452c56a34757409": {
+            "prior_loss_weight": 0.8,
+            "max_train_epochs": 21,
+            "optimizer_args": [
+                "decouple=True",
+                "d_coef=1",
+                "weight_decay=0.001",
+                "use_bias_correction=True",
+                "safeguard_warmup=True"
+            ],
+            "min_snr_gamma": 7
+        },
         "f04d4cd944ff8ff03dda0ad75ae479cde3402e6eb2ac9ebd1b170b59f59b21ac": {
             "prior_loss_weight": 0.7,
             "max_train_epochs": 30,
