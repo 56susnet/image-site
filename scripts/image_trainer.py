@@ -83,6 +83,45 @@ def load_lrs_config(model_type: str, is_style: bool) -> dict:
         return None
 
 
+def load_size_config(model_type: str, is_style: bool) -> dict:
+    """Load size-based configuration (size_person.json or size_style.json)"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_dir = os.path.join(script_dir, "lrs")
+    
+    if model_type == "flux":
+        # Flux doesn't use size-based configs yet
+        return {}
+    
+    config_file = os.path.join(config_dir, "size_style.json" if is_style else "size_person.json")
+    
+    try:
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load size config from {config_file}: {e}", flush=True)
+        return {}
+
+
+def get_config_for_dataset_size(size_config: dict, num_images: int) -> dict:
+    """Find and return config for the appropriate size range based on image count"""
+    if not size_config or "size_ranges" not in size_config:
+        return {}
+    
+    size_ranges = size_config.get("size_ranges", [])
+    
+    for range_config in size_ranges:
+        min_size = range_config.get("min", 0)
+        max_size = range_config.get("max", float('inf'))
+        
+        if min_size <= num_images <= max_size:
+            config = range_config.get("config", {})
+            print(f"Found size-based config for {num_images} images (range {min_size}-{max_size}): {config}", flush=True)
+            return config
+    
+    print(f"Warning: No size range found for {num_images} images, using defaults", flush=True)
+    return {}
+
+
 def create_config(task_id, model_path, model_name, model_type, expected_repo_name, trigger_word: str | None = None):
     """Get the training data directory"""
     train_data_dir = train_paths.get_image_training_images_dir(task_id)
@@ -117,15 +156,48 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
         print(f"Created ai-toolkit config at {config_path}", flush=True)
         return config_path
     else:
+        # Load base config template
         with open(config_template_path, "r") as file:
             config = toml.load(file)
 
+        # Count images first (needed for size-based config)
+        num_images = 0
+        if os.path.exists(train_data_dir):
+            for root, dirs, files in os.walk(train_data_dir):
+                num_images += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
+        
+        print(f"Detected {num_images} images for task {task_id}", flush=True)
+
+        # Step 1: Load and apply size-based configuration (base layer)
+        size_config = load_size_config(model_type, is_style)
+        size_based_settings = get_config_for_dataset_size(size_config, num_images)
+        
+        if size_based_settings:
+            print(f"Applying size-based configuration for {num_images} images", flush=True)
+            
+            # Apply size-based parameters
+            for size_key in [
+                "network_dim",
+                "network_alpha", 
+                "train_batch_size",
+                "lr_scheduler",
+                "lr_warmup_steps",
+                "learning_rate",
+                "unet_lr",
+                "text_encoder_lr",
+            ]:
+                if size_key in size_based_settings:
+                    config[size_key] = size_based_settings[size_key]
+                    print(f"  {size_key}: {size_based_settings[size_key]}", flush=True)
+        
+        # Step 2: Load and apply model-specific overrides (top layer)
         lrs_config = load_lrs_config(model_type, is_style)
         if lrs_config:
             model_hash = hash_model(model_name)
             lrs_settings = get_config_for_model(lrs_config, model_hash)
 
             if lrs_settings:
+                print(f"Applying model-specific overrides for '{model_name}'", flush=True)
                 for optional_key in [
                     "max_grad_norm",
                     "prior_loss_weight",
@@ -138,153 +210,54 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
                     "min_snr_gamma",
                     "seed",
                     "lr_warmup_steps",
+                    "lr_scheduler",
                     "loss_type",
                     "huber_c",
                     "huber_schedule",
+                    "network_dim",
+                    "network_alpha",
                 ]:
                     if optional_key in lrs_settings:
                         config[optional_key] = lrs_settings[optional_key]
+                        print(f"  override {optional_key}: {lrs_settings[optional_key]}", flush=True)
             else:
-                print(f"Warning: No LRS configuration found for model '{model_name}'", flush=True)
-        else:
-            print("Warning: Could not load LRS configuration, using default values", flush=True)
+                print(f"No model-specific configuration found for '{model_name}'", flush=True)
+        
+        # Step 3: Apply network_args with smart dropout (always apply)
+        if model_type == "sdxl":
+            # Calculate base conv dims based on network_dim (if not already set by size config)
+            network_dim = config.get("network_dim", 128)
+            
+            # Default conv dims scale with network_dim
+            if network_dim <= 64:
+                conv_dim, conv_alpha = 8, 4
+            elif network_dim <= 128:
+                conv_dim, conv_alpha = 16, 8
+            else:
+                conv_dim, conv_alpha = 32, 16
+            
+            # Smart dropout based on dataset size and task type
+            if not is_style:
+                dropout = 0.005  # Person tasks: minimal dropout
+            elif num_images <= 12:
+                dropout = 0.01   # Small style datasets: moderate dropout
+            else:
+                dropout = 0.1    # Larger style datasets: standard dropout
+            
+            config["network_args"] = [
+                f"conv_dim={conv_dim}",
+                f"conv_alpha={conv_alpha}",
+                f"dropout={dropout}"
+            ]
+            print(f"  network_args: conv_dim={conv_dim}, conv_alpha={conv_alpha}, dropout={dropout}", flush=True)
 
-        # Update config
-        network_config_person = {
-            "stabilityai/stable-diffusion-xl-base-1.0": 235,
-            "Lykon/dreamshaper-xl-1-0": 235,
-            "Lykon/art-diffusion-xl-0.9": 235,
-            "SG161222/RealVisXL_V4.0": 467,
-            "stablediffusionapi/protovision-xl-v6.6": 235,
-            "stablediffusionapi/omnium-sdxl": 235,
-            "GraydientPlatformAPI/realism-engine2-xl": 235,
-            "GraydientPlatformAPI/albedobase2-xl": 467,
-            "KBlueLeaf/Kohaku-XL-Zeta": 235,
-            "John6666/hassaku-xl-illustrious-v10style-sdxl": 228,
-            "John6666/nova-anime-xl-pony-v5-sdxl": 235,
-            "cagliostrolab/animagine-xl-4.0": 699,
-            "dataautogpt3/CALAMITY": 235,
-            "dataautogpt3/ProteusSigma": 235,
-            "dataautogpt3/ProteusV0.5": 467,
-            "dataautogpt3/TempestV0.1": 456,
-            "ehristoforu/Visionix-alpha": 235,
-            "femboysLover/RealisticStockPhoto-fp16": 467,
-            "fluently/Fluently-XL-Final": 228,
-            "mann-e/Mann-E_Dreams": 456,
-            "misri/leosamsHelloworldXL_helloworldXL70": 235,
-            "misri/zavychromaxl_v90": 235,
-            "openart-custom/DynaVisionXL": 228,
-            "recoilme/colorfulxl": 228,
-            "zenless-lab/sdxl-aam-xl-anime-mix": 456,
-            "zenless-lab/sdxl-anima-pencil-xl-v5": 228,
-            "zenless-lab/sdxl-anything-xl": 228,
-            "zenless-lab/sdxl-blue-pencil-xl-v7": 467,
-            "Corcelio/mobius": 228,
-            "GHArt/Lah_Mysterious_SDXL_V4.0_xl_fp16": 235,
-            "OnomaAIResearch/Illustrious-xl-early-release-v0": 228
-        }
-
-        network_config_style = {
-            "stabilityai/stable-diffusion-xl-base-1.0": 235,
-            "Lykon/dreamshaper-xl-1-0": 235,
-            "Lykon/art-diffusion-xl-0.9": 235,
-            "SG161222/RealVisXL_V4.0": 235,
-            "stablediffusionapi/protovision-xl-v6.6": 235,
-            "stablediffusionapi/omnium-sdxl": 235,
-            "GraydientPlatformAPI/realism-engine2-xl": 235,
-            "GraydientPlatformAPI/albedobase2-xl": 235,
-            "KBlueLeaf/Kohaku-XL-Zeta": 235,
-            "John6666/hassaku-xl-illustrious-v10style-sdxl": 235,
-            "John6666/nova-anime-xl-pony-v5-sdxl": 235,
-            "cagliostrolab/animagine-xl-4.0": 235,
-            "dataautogpt3/CALAMITY": 235,
-            "dataautogpt3/ProteusSigma": 235,
-            "dataautogpt3/ProteusV0.5": 235,
-            "dataautogpt3/TempestV0.1": 228,
-            "ehristoforu/Visionix-alpha": 235,
-            "femboysLover/RealisticStockPhoto-fp16": 235,
-            "fluently/Fluently-XL-Final": 235,
-            "mann-e/Mann-E_Dreams": 235,
-            "misri/leosamsHelloworldXL_helloworldXL70": 235,
-            "misri/zavychromaxl_v90": 235,
-            "openart-custom/DynaVisionXL": 235,
-            "recoilme/colorfulxl": 235,
-            "zenless-lab/sdxl-aam-xl-anime-mix": 235,
-            "zenless-lab/sdxl-anima-pencil-xl-v5": 235,
-            "zenless-lab/sdxl-anything-xl": 235,
-            "zenless-lab/sdxl-blue-pencil-xl-v7": 235,
-            "Corcelio/mobius": 235,
-            "GHArt/Lah_Mysterious_SDXL_V4.0_xl_fp16": 235,
-            "OnomaAIResearch/Illustrious-xl-early-release-v0": 235
-        }
-
-        config_mapping = {
-            228: {
-                "network_dim": 64,
-                "network_alpha": 32,
-                "network_args": ["conv_dim=8", "conv_alpha=4", "dropout=0.1"]
-            },
-            235: {
-                "network_dim": 128,
-                "network_alpha": 64,
-                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
-            },
-            456: {
-                "network_dim": 128,
-                "network_alpha": 64,
-                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
-            },
-            467: {
-                "network_dim": 128,
-                "network_alpha": 64,
-                "network_args": ["conv_dim=16", "conv_alpha=8", "dropout=0.1"]
-            },
-            699: {
-                "network_dim": 192,
-                "network_alpha": 96,
-                "network_args": ["conv_dim=32", "conv_alpha=16", "dropout=0.1"]
-            },
-        }
-
+        # Set basic paths
         config["pretrained_model_name_or_path"] = model_path
         config["train_data_dir"] = train_data_dir
         output_dir = train_paths.get_checkpoints_output_path(task_id, expected_repo_name)
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         config["output_dir"] = output_dir
-
-        if model_type == "sdxl":
-            if is_style:
-                network_config = config_mapping[network_config_style[model_name]]
-            else:
-                network_config = config_mapping[network_config_person[model_name]]
-
-            # Count images to adjust dropout dynamically
-            num_images = 0
-            if os.path.exists(train_data_dir):
-                for root, dirs, files in os.walk(train_data_dir):
-                    num_images += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
-            
-            print(f"Detected {num_images} images for task {task_id}", flush=True)
-            
-            # If it's a person task (not is_style), always set dropout to 0.005
-            # Otherwise, if style dataset is small (<= 12 images), set dropout to 0.01
-            # Otherwise use the value defined in config_mapping above
-            network_args = []
-            for arg in network_config["network_args"]:
-                if arg.startswith("dropout="):
-                    if not is_style:
-                        network_args.append("dropout=0.005")
-                    elif num_images <= 12:
-                        network_args.append("dropout=0.01")
-                    else:
-                        network_args.append(arg)
-                else:
-                    network_args.append(arg)
-
-            config["network_dim"] = network_config["network_dim"]
-            config["network_alpha"] = network_config["network_alpha"]
-            config["network_args"] = network_args
 
         config_path = os.path.join(train_cst.IMAGE_CONTAINER_CONFIG_SAVE_PATH, f"{task_id}.toml")
         save_config_toml(config, config_path)
