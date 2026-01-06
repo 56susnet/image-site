@@ -1,0 +1,65 @@
+{
+    "default": {},
+    "size_ranges": [
+        {
+            "min": 1,
+            "max": 15,
+            "config": {
+                "batch_size": 1,
+                "steps": 1200,
+                "lr": 0.00015,
+                "gradient_accumulation": 1,
+                "network_linear": 32,
+                "network_linear_alpha": 16
+            }
+        },
+        {
+            "min": 16,
+            "max": 30,
+            "config": {
+                "batch_size": 1,
+                "steps": 1500,
+                "lr": 0.00012,
+                "gradient_accumulation": 1,
+                "network_linear": 64,
+                "network_linear_alpha": 32
+            }
+        },
+        {
+            "min": 31,
+            "max": 50,
+            "config": {
+                "batch_size": 1,
+                "steps": 2000,
+                "lr": 0.0001,
+                "gradient_accumulation": 2,
+                "network_linear": 64,
+                "network_linear_alpha": 32
+            }
+        },
+        {
+            "min": 51,
+            "max": 80,
+            "config": {
+                "batch_size": 1,
+                "steps": 2500,
+                "lr": 0.0001,
+                "gradient_accumulation": 2,
+                "network_linear": 96,
+                "network_linear_alpha": 48
+            }
+        },
+        {
+            "min": 81,
+            "max": 1000,
+            "config": {
+                "batch_size": 1,
+                "steps": 3000,
+                "lr": 0.00008,
+                "gradient_accumulation": 3,
+                "network_linear": 128,
+                "network_linear_alpha": 64
+            }
+        }
+    ]
+}

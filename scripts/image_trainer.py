@@ -84,15 +84,22 @@ def load_lrs_config(model_type: str, is_style: bool) -> dict:
 
 
 def load_size_config(model_type: str, is_style: bool) -> dict:
-    """Load size-based configuration (size_person.json or size_style.json)"""
+    """Load size-based configuration (size_person.json, size_style.json, or ai-toolkit configs)"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_dir = os.path.join(script_dir, "lrs")
     
-    if model_type == "flux":
+    # AI-Toolkit models (qwen-image, z-image)
+    if model_type == ImageModelType.QWEN_IMAGE.value:
+        config_file = os.path.join(config_dir, "size_qwen_image.json")
+    elif model_type == ImageModelType.Z_IMAGE.value:
+        config_file = os.path.join(config_dir, "size_zimage.json")
+    # SDXL models
+    elif model_type == "flux":
         # Flux doesn't use size-based configs yet
         return {}
-    
-    config_file = os.path.join(config_dir, "size_style.json" if is_style else "size_person.json")
+    else:
+        # SDXL person/style
+        config_file = os.path.join(config_dir, "size_style.json" if is_style else "size_person.json")
     
     try:
         with open(config_file, 'r') as f:
@@ -132,10 +139,25 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
     is_ai_toolkit = model_type in [ImageModelType.Z_IMAGE.value, ImageModelType.QWEN_IMAGE.value]
     
     if is_ai_toolkit:
+        # Load base YAML template
         with open(config_template_path, "r") as file:
             config = yaml.safe_load(file)
+        
+        # Count images for size-based configuration
+        num_images = 0
+        if os.path.exists(train_data_dir):
+            for root, dirs, files in os.walk(train_data_dir):
+                num_images += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
+        
+        print(f"Detected {num_images} images for task {task_id}", flush=True)
+        
+        # Load and apply size-based configuration
+        size_config = load_size_config(model_type, is_style)
+        size_based_settings = get_config_for_dataset_size(size_config, num_images)
+        
         if 'config' in config and 'process' in config['config']:
             for process in config['config']['process']:
+                # Apply basic paths
                 if 'model' in process:
                     process['model']['name_or_path'] = model_path
                     if 'training_folder' in process:
@@ -150,6 +172,47 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
 
                 if trigger_word:
                     process['trigger_word'] = trigger_word
+                
+                # Apply size-based configuration to network and training params
+                if size_based_settings:
+                    print(f"Applying size-based configuration for {num_images} images (ai-toolkit)", flush=True)
+                    
+                    # Network configuration
+                    if 'network' in process:
+                        if 'network_linear' in size_based_settings:
+                            process['network']['linear'] = size_based_settings['network_linear']
+                            print(f"  network.linear: {size_based_settings['network_linear']}", flush=True)
+                        
+                        if 'network_linear_alpha' in size_based_settings:
+                            process['network']['linear_alpha'] = size_based_settings['network_linear_alpha']
+                            print(f"  network.linear_alpha: {size_based_settings['network_linear_alpha']}", flush=True)
+                        
+                        # For z-image which also has conv layers
+                        if 'network_conv' in size_based_settings:
+                            process['network']['conv'] = size_based_settings['network_conv']
+                            print(f"  network.conv: {size_based_settings['network_conv']}", flush=True)
+                        
+                        if 'network_conv_alpha' in size_based_settings:
+                            process['network']['conv_alpha'] = size_based_settings['network_conv_alpha']
+                            print(f"  network.conv_alpha: {size_based_settings['network_conv_alpha']}", flush=True)
+                    
+                    # Training configuration
+                    if 'train' in process:
+                        if 'batch_size' in size_based_settings:
+                            process['train']['batch_size'] = size_based_settings['batch_size']
+                            print(f"  train.batch_size: {size_based_settings['batch_size']}", flush=True)
+                        
+                        if 'steps' in size_based_settings:
+                            process['train']['steps'] = size_based_settings['steps']
+                            print(f"  train.steps: {size_based_settings['steps']}", flush=True)
+                        
+                        if 'lr' in size_based_settings:
+                            process['train']['lr'] = size_based_settings['lr']
+                            print(f"  train.lr: {size_based_settings['lr']}", flush=True)
+                        
+                        if 'gradient_accumulation' in size_based_settings:
+                            process['train']['gradient_accumulation'] = size_based_settings['gradient_accumulation']
+                            print(f"  train.gradient_accumulation: {size_based_settings['gradient_accumulation']}", flush=True)
         
         config_path = os.path.join(train_cst.IMAGE_CONTAINER_CONFIG_SAVE_PATH, f"{task_id}.yaml")
         save_config(config, config_path)

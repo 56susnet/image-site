@@ -1,0 +1,70 @@
+{
+    "default": {},
+    "size_ranges": [
+        {
+            "min": 1,
+            "max": 15,
+            "config": {
+                "batch_size": 1,
+                "steps": 150,
+                "lr": 0.00012,
+                "network_linear": 32,
+                "network_linear_alpha": 16,
+                "network_conv": 16,
+                "network_conv_alpha": 8
+            }
+        },
+        {
+            "min": 16,
+            "max": 30,
+            "config": {
+                "batch_size": 1,
+                "steps": 200,
+                "lr": 0.0001,
+                "network_linear": 48,
+                "network_linear_alpha": 24,
+                "network_conv": 24,
+                "network_conv_alpha": 12
+            }
+        },
+        {
+            "min": 31,
+            "max": 50,
+            "config": {
+                "batch_size": 1,
+                "steps": 250,
+                "lr": 0.0001,
+                "network_linear": 64,
+                "network_linear_alpha": 32,
+                "network_conv": 32,
+                "network_conv_alpha": 16
+            }
+        },
+        {
+            "min": 51,
+            "max": 80,
+            "config": {
+                "batch_size": 1,
+                "steps": 300,
+                "lr": 0.00008,
+                "network_linear": 96,
+                "network_linear_alpha": 48,
+                "network_conv": 48,
+                "network_conv_alpha": 24
+            }
+        },
+        {
+            "min": 81,
+            "max": 1000,
+            "config": {
+                "batch_size": 1,
+                "steps": 400,
+                "lr": 0.00008,
+                "network_linear": 128,
+                "network_linear_alpha": 64,
+                "network_conv": 64,
+                "network_conv_alpha": 32
+            }
+        }
+    ]
+}
