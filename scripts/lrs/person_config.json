@@ -228,7 +228,7 @@
         },
         "87a20676586c53891563895be0408c6109b83f1d891700dd6ff6c02a25cd6c47": {
             "max_train_epochs": 30,
-            "unet_lr": 1e-5
+            "train_batch_size": 4
         },
         "eb324bfcad14e8f1d46346f46ae7af7d3e58c3babbc1f699ee7c61baab291369": {
             "prior_loss_weight": 0.7,
