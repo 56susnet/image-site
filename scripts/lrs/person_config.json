@@ -68,17 +68,9 @@
             "min_snr_gamma": 7
         },
         "7637327a8414801bf0bb4d6d1b574dd95c05525165ee271cc085b64f89c8cba8": {
-            "prior_loss_weight": 0.7,
             "max_train_epochs": 30,
-            "train_batch_size": 6,
-            "optimizer_args": [
-                "decouple=True",
-                "d_coef=1",
-                "weight_decay=0.005",
-                "use_bias_correction=True",
-                "safeguard_warmup=True"
-            ],
-            "min_snr_gamma": 6
+            "unet_lr": 1e-05,
+            "train_batch_size": 4
         },
         "158598455e814319c65ccbf8bbae049200601b2ac4fb1429fed6158f2f5ac8bd": {
             "max_train_epochs": 30,
@@ -197,17 +189,8 @@
             "min_snr_gamma": 7
         },
         "a51427f9147c3c672edacd0c1070443e50d28df4c6f7d04cd7038fb68f1e8952": {
-            "prior_loss_weight": 0.7,
             "max_train_epochs": 30,
-            "train_batch_size": 6,
-            "optimizer_args": [
-                "decouple=True",
-                "d_coef=1",
-                "weight_decay=0.005",
-                "use_bias_correction=True",
-                "safeguard_warmup=True"
-            ],
-            "min_snr_gamma": 6
+            "train_batch_size": 6
         },
         "84b1be29d81de0bf88d6c4033943d2bc4b543d9ebba9e1c9678296237f147466": {
             "prior_loss_weight": 0.7,
@@ -222,7 +205,17 @@
             ],
             "min_snr_gamma": 6
         },
-        "9177dab379e14f76c500ad2246352fd9387f11e2f57e2973bf9ada4d7cd4c962": {},
+        "9177dab379e14f76c500ad2246352fd9387f11e2f57e2973bf9ada4d7cd4c962": {
+            "max_train_epochs": 30,
+            "train_batch_size": 4,
+            "optimizer_args": [
+                "decouple=True",
+                "d_coef=1",
+                "weight_decay=0.001",
+                "use_bias_correction=True",
+                "safeguard_warmup=True"
+            ]
+        },
         "c6efeaf411754e65b3e2395640d5f90ac6150a1d82e4b3caf8df566aa406609c": {
             "max_train_epochs": 30
         },
