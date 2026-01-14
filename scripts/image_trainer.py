@@ -293,11 +293,11 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
             
             # Default conv dims scale with network_dim
             if network_dim <= 64:
-                conv_dim, conv_alpha = 8, 4
+                conv_dim, conv_alpha = 12, 6
             elif network_dim <= 128:
-                conv_dim, conv_alpha = 16, 8
+                conv_dim, conv_alpha = 24, 12
             else:
-                conv_dim, conv_alpha = 32, 16
+                conv_dim, conv_alpha = 48, 24
             
             # Smart dropout based on dataset size and task type
             if not is_style:
@@ -305,7 +305,7 @@ def create_config(task_id, model_path, model_name, model_type, expected_repo_nam
             elif num_images <= 12:
                 dropout = 0.01   # Small style datasets: moderate dropout
             else:
-                dropout = 0.1    # Larger style datasets: standard dropout
+                dropout = 0.05    # Larger style datasets: standard dropout
             
             config["network_args"] = [
                 f"conv_dim={conv_dim}",
