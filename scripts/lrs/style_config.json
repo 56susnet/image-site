@@ -117,6 +117,7 @@
             "min_snr_gamma": 7
         },
         "e4308bdead0e824ea25e37c6caf771f231428975d33316496452c56a34757409": {},
+        "46bc6498a086646889d92058d7e50398177841349bfce3181bdb5846849354b7": {},
         "a74734bd059b67f654909604bbe57cce7802cf41ce7cf269252366c62b2c8bf6": {
             "max_train_epochs": 22,
             "optimizer_args": [
