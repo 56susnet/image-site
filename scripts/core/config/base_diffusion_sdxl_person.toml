@@ -27,7 +27,7 @@ no_half_vae = true
 output_dir = "test_sdxl_sd3"
 output_name = "last"
 pretrained_model_name_or_path = ""
-prior_loss_weight = 1
+prior_loss_weight = 0.75
 resolution = "1024,1024"
 sample_prompts = ""
 sample_sampler = "euler_a"
@@ -51,7 +51,7 @@ gradient_accumulation_steps = 1
 
 ###### optimizer ######
 optimizer_type = "prodigy"
-optimizer_args = ["decouple=True", "d_coef=1", "weight_decay=0.01", "use_bias_correction=True", "safeguard_warmup=True"]
+optimizer_args = ["decouple=True", "d_coef=1.05", "weight_decay=0.008", "use_bias_correction=True", "safeguard_warmup=True"]
 unet_lr = 1
 text_encoder_lr = 1
 
@@ -74,6 +74,6 @@ network_dropout = 0
 caption_dropout_rate = 0
 clip_skip = 1
 max_timestep = 1000
-min_snr_gamma = 5
+min_snr_gamma = 6
 scale_weight_norms = 5
 seed = 2951032222
