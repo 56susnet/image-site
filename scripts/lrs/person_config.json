@@ -69,7 +69,6 @@
         },
         "7637327a8414801bf0bb4d6d1b574dd95c05525165ee271cc085b64f89c8cba8": {
             "max_train_epochs": 30,
-            "unet_lr": 1e-05,
             "train_batch_size": 4
         },
         "158598455e814319c65ccbf8bbae049200601b2ac4fb1429fed6158f2f5ac8bd": {
