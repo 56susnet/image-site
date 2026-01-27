@@ -82,21 +82,21 @@
         },
         "7d6474f05dc6940ad31182d1359e7f6390dfa92a0cbae20597bfd86d415bd0fd": {
             "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
-            "train_batch_size": 6,
+            "max_train_epochs": 21,
+            "train_batch_size": 4,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
-                "weight_decay=0.005",
+                "weight_decay=0,001",
                 "use_bias_correction=True",
                 "safeguard_warmup=True"
             ],
-            "min_snr_gamma": 6
+            "min_snr_gamma": 7
         },
         "0b7169dc27a95818a024b479271167dd8bb221ee1cebf58a683378927eb447c3": {
-            "prior_loss_weight": 0.8,
+            "prior_loss_weight": 0.7,
             "max_train_epochs": 21,
-            "train_batch_size": 6,
+            "train_batch_size": 4,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
@@ -171,6 +171,9 @@
             "min_snr_gamma": 6
         },
         "2b2d23c68c5429f8108bb6f80e20cc08bbed1d3210bbba21bd674a767e2695b1": {},
+        "a39c9825466ea06cd71c5db75963783dba07b2d2a02b9aac21452c3762493c8f": {
+            "max_train_epochs": 21
+        },
         "70ff32b896771e2c67412f6a8299e0bf831705bb714af7e810c1466de783cdd0": {
             "prior_loss_weight": 0.8,
             "max_train_epochs": 21,
@@ -220,7 +223,7 @@
         },
         "eb324bfcad14e8f1d46346f46ae7af7d3e58c3babbc1f699ee7c61baab291369": {
             "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
+            "max_train_epochs": 21,
             "train_batch_size": 4,
             "optimizer_args": [
                 "decouple=True",
@@ -229,10 +232,10 @@
                 "use_bias_correction=True",
                 "safeguard_warmup=True"
             ],
-            "min_snr_gamma": 5
+            "min_snr_gamma": 7
         },
         "162748f97994bc2ffaafdcfd900e06e245e85a9826fb77aa8568846fb6b3f15d": {
-            "max_train_epochs": 30
+            "max_train_epochs": 21
         },
         "46bc6498a086646889d92058d7e50398177841349bfce3181bdb5846849354b7": {
             "prior_loss_weight": 0.8,
