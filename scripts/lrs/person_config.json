@@ -94,8 +94,8 @@
             "min_snr_gamma": 7
         },
         "0b7169dc27a95818a024b479271167dd8bb221ee1cebf58a683378927eb447c3": {
-            "prior_loss_weight": 0.7,
-            "max_train_epochs": 23,
+            "prior_loss_weight": 0.8,
+            "max_train_epochs": 21,
             "train_batch_size": 6,
             "optimizer_args": [
                 "decouple=True",
