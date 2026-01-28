@@ -5,17 +5,17 @@
             "max_train_epochs": 25
         },
         "f61cef4efcc21d26c0257cd9884a1b67c019d786092dfa4bc0b1ef4ed8869d80": {
-            "max_train_epochs": 30,
+            "max_train_epochs": 23,
             "train_batch_size": 6,
             "prior_loss_weight": 0.7,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
-                "weight_decay=0.005",
+                "weight_decay=0.001",
                 "use_bias_correction=True",
                 "safeguard_warmup=True"
             ],
-            "min_snr_gamma": 6
+            "min_snr_gamma": 7
         },
         "34a7aae44aeda3ba98eec73d818a4392a6226b9e00c223af02c105bda649268c": {
             "prior_loss_weight": 0.7,
@@ -95,8 +95,8 @@
         },
         "0b7169dc27a95818a024b479271167dd8bb221ee1cebf58a683378927eb447c3": {
             "prior_loss_weight": 0.7,
-            "max_train_epochs": 21,
-            "train_batch_size": 4,
+            "max_train_epochs": 23,
+            "train_batch_size": 6,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
@@ -187,25 +187,25 @@
             "min_snr_gamma": 7
         },
         "a51427f9147c3c672edacd0c1070443e50d28df4c6f7d04cd7038fb68f1e8952": {
-            "max_train_epochs": 30,
+            "max_train_epochs": 25,
             "train_batch_size": 6
         },
         "84b1be29d81de0bf88d6c4033943d2bc4b543d9ebba9e1c9678296237f147466": {
             "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
+            "max_train_epochs": 25,
             "train_batch_size": 6,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
-                "weight_decay=0.005",
+                "weight_decay=0.001",
                 "use_bias_correction=True",
                 "safeguard_warmup=True"
             ],
-            "min_snr_gamma": 6
+            "min_snr_gamma": 7
         },
         "9177dab379e14f76c500ad2246352fd9387f11e2f57e2973bf9ada4d7cd4c962": {
             "prior_loss_weight": 0.7,
-            "max_train_epochs": 30,
+            "max_train_epochs": 25,
             "optimizer_args": [
                 "decouple=True",
                 "d_coef=1",
@@ -235,7 +235,17 @@
             "min_snr_gamma": 7
         },
         "162748f97994bc2ffaafdcfd900e06e245e85a9826fb77aa8568846fb6b3f15d": {
-            "max_train_epochs": 21
+            "prior_loss_weight": 0.7,
+            "max_train_epochs": 23,
+            "train_batch_size": 6,
+            "optimizer_args": [
+                "decouple=True",
+                "d_coef=1",
+                "weight_decay=0.001",
+                "use_bias_correction=True",
+                "safeguard_warmup=True"
+            ],
+            "min_snr_gamma": 7
         },
         "46bc6498a086646889d92058d7e50398177841349bfce3181bdb5846849354b7": {
             "prior_loss_weight": 0.8,

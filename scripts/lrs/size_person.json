@@ -5,9 +5,9 @@
             "min": 1,
             "max": 15,
             "config": {
-                "train_batch_size": 6,
-                "lr_scheduler": "constant_with_warmup",
-                "lr_warmup_steps": 200,
+                "train_batch_size": 4,
+                "lr_scheduler": "cosine",
+                "lr_warmup_steps": 150,
                 "network_dim": 64,
                 "network_alpha": 32
             }
@@ -19,8 +19,8 @@
                 "train_batch_size": 6,
                 "lr_scheduler": "constant_with_warmup",
                 "lr_warmup_steps": 200,
-                "network_dim": 64,
-                "network_alpha": 32
+                "network_dim": 96,
+                "network_alpha": 48
             }
         },
         {
@@ -28,10 +28,10 @@
             "max": 50,
             "config": {
                 "train_batch_size": 6,
-                "lr_scheduler": "constant_with_warmup",
-                "lr_warmup_steps": 350,
-                "network_dim": 96,
-                "network_alpha": 48
+                "lr_scheduler": "cosine",
+                "lr_warmup_steps": 300,
+                "network_dim": 128,
+                "network_alpha": 64
             }
         },
         {
@@ -40,7 +40,7 @@
             "config": {
                 "train_batch_size": 6,
                 "lr_scheduler": "constant_with_warmup",
-                "lr_warmup_steps": 400,
+                "lr_warmup_steps": 350,
                 "network_dim": 128,
                 "network_alpha": 64
             }
@@ -50,8 +50,8 @@
             "max": 1000,
             "config": {
                 "train_batch_size": 6,
-                "lr_scheduler": "constant_with_warmup",
-                "lr_warmup_steps": 400,
+                "lr_scheduler": "cosine_with_restarts",
+                "lr_warmup_steps": 300,
                 "network_dim": 128,
                 "network_alpha": 64
             }
